@@ -1,0 +1,253 @@
+{
+  "script_language": "zh",
+  "asset_registry": {
+    "assets": [
+      {
+        "character": "陆北辰",
+        "asset_type": "身体特征",
+        "asset_name": "背部刀疤",
+        "episode": 3,
+        "scene": 2,
+        "page": null,
+        "raw_text": "陆北辰换衣服，背部一道狰狞的刀疤在灯光下泛着白",
+        "status": "exists",
+        "is_vague": false
+      },
+      {
+        "character": "陆北辰",
+        "asset_type": "身体特征",
+        "asset_name": "背部刀疤",
+        "episode": 5,
+        "scene": 1,
+        "page": null,
+        "raw_text": "苏晚晴第一次看清那道疤，从颈根延伸至腰侧，足有二十厘米，是少年时被仇家砍伤留下的",
+        "status": "exists",
+        "is_vague": false
+      },
+      {
+        "character": "陆北辰",
+        "asset_type": "服装",
+        "asset_name": "便装",
+        "episode": 4,
+        "scene": 1,
+        "page": null,
+        "raw_text": "陆北辰穿着便装走进办公室",
+        "status": "exists",
+        "is_vague": true
+      },
+      {
+        "character": "苏晚晴",
+        "asset_type": "服装",
+        "asset_name": "白色晚礼服，露肩设计，裙摆及地",
+        "episode": 6,
+        "scene": 5,
+        "page": null,
+        "raw_text": "苏晚晴穿着一袭白色露肩长裙，在人群中分外显眼",
+        "status": "exists",
+        "is_vague": false
+      },
+      {
+        "character": "苏晚晴",
+        "asset_type": "配饰",
+        "asset_name": "母亲遗物项链",
+        "episode": 4,
+        "scene": 5,
+        "page": null,
+        "raw_text": "苏晚晴紧紧握住胸前的项链，这是她母亲的遗物",
+        "status": "exists",
+        "is_vague": false
+      },
+      {
+        "character": "陆北辰",
+        "asset_type": "隐性视觉特征",
+        "asset_name": "右手受伤迹象",
+        "episode": 7,
+        "scene": 1,
+        "page": null,
+        "raw_text": "陆北辰下意识捂住右手，眼神闪过一丝痛苦",
+        "status": "exists",
+        "is_vague": false
+      }
+    ],
+    "state_changes": [
+      {
+        "character": "陆北辰",
+        "asset_type": "右手",
+        "change_from": "正常",
+        "change_to": "骨折，打石膏",
+        "episode": 7,
+        "scene": 2,
+        "in_story_time_note": "当晚"
+      },
+      {
+        "character": "陆北辰",
+        "asset_type": "右手",
+        "change_from": "骨折，打石膏",
+        "change_to": "痊愈，石膏拆除",
+        "episode": 7,
+        "scene": 8,
+        "in_story_time_note": "当晚"
+      },
+      {
+        "character": "苏晚晴",
+        "asset_type": "母亲遗物项链",
+        "change_from": "exists",
+        "change_to": "消失，被抢走",
+        "episode": 8,
+        "scene": 3,
+        "in_story_time_note": null
+      }
+    ],
+    "timeline": [
+      {
+        "episode": 1,
+        "scene": 1,
+        "time_label": "现代，故事起点",
+        "is_flashback": false
+      },
+      {
+        "episode": 2,
+        "scene": 4,
+        "time_label": "五年前，陆北辰与苏晚晴初遇",
+        "is_flashback": true
+      },
+      {
+        "episode": 3,
+        "scene": 2,
+        "time_label": "现代，第1集次日",
+        "is_flashback": false
+      },
+      {
+        "episode": 8,
+        "scene": 6,
+        "time_label": "两年前，陆北辰仇家事件",
+        "is_flashback": true
+      }
+    ],
+    "character_settings": [
+      {
+        "character": "陆北辰",
+        "setting_type": "过敏史",
+        "content": "对海鲜严重过敏，接触即休克",
+        "episode": 2,
+        "scene": 5,
+        "raw_text": "陆北辰冷声道：我这人对海鲜过敏，别往菜里放"
+      },
+      {
+        "character": "苏晚晴",
+        "setting_type": "技能",
+        "content": "擅长绘画，科班出身",
+        "episode": 1,
+        "scene": 3,
+        "raw_text": "苏晚晴随手在餐巾纸上勾出陆北辰的轮廓，线条精准流畅"
+      },
+      {
+        "character": "陆北辰",
+        "setting_type": "习惯",
+        "content": "不喝酒，滴酒不沾",
+        "episode": 3,
+        "scene": 6,
+        "raw_text": "陆北辰把酒杯推开：我不喝酒"
+      }
+    ]
+  },
+  "conflicts": {
+    "conflicts": [
+      {
+        "rule_id": "R01",
+        "severity": "P0",
+        "description": "陆北辰的背部刀疤在第3集第2场已直接展示，但直到第5集第1场才首次文字描述其来历与外观，资产使用早于设定，叙事顺序倒错",
+        "character": "陆北辰",
+        "episode_a": 3,
+        "scene_a": 2,
+        "episode_b": 5,
+        "scene_b": 1,
+        "raw_evidence": "E3S2: 背部一道狰狞的刀疤在灯光下泛着白 / E5S1: 是少年时被仇家砍伤留下的"
+      },
+      {
+        "rule_id": "R02",
+        "severity": "P1",
+        "description": "陆北辰右手在第7集第2场确诊骨折打石膏，同集第8场即已痊愈拆石膏，恢复时间严重违背医学常理",
+        "character": "陆北辰",
+        "episode_a": 7,
+        "scene_a": 2,
+        "episode_b": 7,
+        "scene_b": 8,
+        "raw_evidence": "E7S2: 右手骨折打石膏 / E7S8: 石膏已拆除，手部活动自如"
+      },
+      {
+        "rule_id": "A1",
+        "severity": "P1",
+        "description": "陆北辰第3集设定滴酒不沾，但第9集商务宴请时举杯饮下整杯红酒，与角色硬性设定矛盾",
+        "character": "陆北辰",
+        "episode_a": 3,
+        "scene_a": 6,
+        "episode_b": 9,
+        "scene_b": 2,
+        "raw_evidence": "E3S6: 陆北辰把酒杯推开：我不喝酒 / E9S2: 陆北辰一仰头将红酒饮尽"
+      },
+      {
+        "rule_id": "B1",
+        "severity": "P2",
+        "description": "第4集第1场陆北辰服装描述仅为'便装'，缺乏具体款式、颜色和材质，服化道部门无法据此准确还原，存在制作歧义风险",
+        "character": "陆北辰",
+        "episode_a": 4,
+        "scene_a": 1,
+        "episode_b": null,
+        "scene_b": null,
+        "raw_evidence": "E4S1: 陆北辰穿着便装走进办公室"
+      },
+      {
+        "rule_id": "R01",
+        "severity": "P3",
+        "description": "苏晚晴的母亲遗物项链在第4集第5场突然成为关键道具，前3集剧情中从未铺垫，观众对该道具的情感重量缺乏认知积累",
+        "character": "苏晚晴",
+        "episode_a": 4,
+        "scene_a": 5,
+        "episode_b": null,
+        "scene_b": null,
+        "raw_evidence": "E4S5: 苏晚晴紧紧握住胸前的项链，这是她母亲的遗物（前3集无任何项链相关描写）"
+      }
+    ],
+    "total_count": 5,
+    "p0_count": 1,
+    "p1_count": 2,
+    "p2_count": 1,
+    "p3_count": 1
+  },
+  "fix_suggestions": {
+    "suggestions": [
+      {
+        "conflict_rule_id": "R01",
+        "conflict_description": "陆北辰的背部刀疤在第3集已展示，但第5集才首次描述来历，资产使用早于设定",
+        "suggestion": "方案一：将第3集换衣服的场景修改为仅展示衬衫脱下时的动作，不直接呈现背部，用苏晚晴'似乎看到了什么'的反应镜头暗示，待第5集正式揭露。方案二：保留第3集刀疤镜头，但在同场增加一句陆北辰的独白或苏晚晴询问的反应，为第5集描述做铺垫。",
+        "priority": "P0"
+      },
+      {
+        "conflict_rule_id": "R02",
+        "conflict_description": "陆北辰右手骨折，同集内即痊愈，恢复过快",
+        "suggestion": "方案一：将右手骨折降级为软组织挫伤或轻度扭伤，冰敷后当晚可缓解，使同集痊愈合理化。方案二：保留骨折设定，但将石膏拆除场景移至第9集或第10集，中间集数增加陆北辰单手操作的细节（如用左手打字、拒绝握手等）体现伤情影响。",
+        "priority": "P1"
+      },
+      {
+        "conflict_rule_id": "A1",
+        "conflict_description": "陆北辰设定不喝酒，但第9集举杯饮酒",
+        "suggestion": "修改第9集第2场：将红酒替换为装在红酒杯中的葡萄汁，并由助理提前与餐厅沟通，台词可加'这是果汁，别让对方看出来'——既符合商务场合需要，也保留了角色不喝酒的设定，同时增加了人物细节层次。",
+        "priority": "P1"
+      },
+      {
+        "conflict_rule_id": "B1",
+        "conflict_description": "陆北辰服装描述'便装'过于模糊，给服化道带来歧义",
+        "suggestion": "将'便装'修改为具体描述，如'深灰色高领羊绒衫搭配黑色修身休闲西裤，无领带'，既符合总裁在轻松场合的穿着逻辑，又为服化道提供明确参考，避免现场随意发挥导致的视觉不统一。",
+        "priority": "P2"
+      },
+      {
+        "conflict_rule_id": "R01",
+        "conflict_description": "苏晚晴项链在第4集突然成为关键道具，缺乏铺垫",
+        "suggestion": "在第1集苏晚晴首次出场时，增加一个细节：她低头整理衣物时，镜头给到项链一个两秒的特写，随后被她迅速收进领口。第2集可增加'她习惯性地摸了摸胸口'的动作描写。这两处铺垫让第4集项链的戏剧爆发有迹可循。",
+        "priority": "P3"
+      }
+    ]
+  },
+  "summary": "共发现5条冲突：P0 1条，P1 2条，P2 1条，P3 1条。"
+}

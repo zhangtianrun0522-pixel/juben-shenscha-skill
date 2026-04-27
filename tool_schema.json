@@ -1,0 +1,26 @@
+{
+  "name": "continuity_check",
+  "description": "剧本连贯性审查工具。分析剧本中角色的外貌、服装、道具、伤疤等视觉资产及剧情时间线，检测跨集跨场景的前后矛盾，输出冲突报告和修复建议。适用于短剧、网剧剧本制作前质检。",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "script_text": {
+        "type": "string",
+        "description": "剧本全文，纯文本格式"
+      },
+      "check_mode": {
+        "type": "string",
+        "enum": ["full", "assets_only", "conflicts_only"],
+        "default": "full",
+        "description": "full=完整三步流水线；assets_only=只提取资产档案；conflicts_only=提取冲突但不生成修复建议"
+      },
+      "severity_filter": {
+        "type": "string",
+        "enum": ["all", "high", "high_medium"],
+        "default": "all",
+        "description": "all=返回全部级别；high=只返回P0；high_medium=返回P0+P1"
+      }
+    },
+    "required": ["script_text"]
+  }
+}

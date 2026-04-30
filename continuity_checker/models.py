@@ -2,6 +2,17 @@ from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 
 
+class AssetIdentity(BaseModel):
+    asset_id: str
+    canonical_name: str
+    aliases: List[str] = Field(default_factory=list)
+    character: str
+    asset_type: str
+    first_episode: int
+    first_scene: int
+    is_vague: bool = False
+
+
 class AssetEntry(BaseModel):
     character: str
     asset_type: str
@@ -12,6 +23,7 @@ class AssetEntry(BaseModel):
     raw_text: str
     status: str = "exists"
     is_vague: bool = False
+    asset_id: Optional[str] = None
 
 
 class StateChange(BaseModel):
@@ -45,6 +57,7 @@ class AssetRegistry(BaseModel):
     state_changes: List[StateChange] = Field(default_factory=list)
     timeline: List[TimelineAnchor] = Field(default_factory=list)
     character_settings: List[CharacterSetting] = Field(default_factory=list)
+    identities: List[AssetIdentity] = Field(default_factory=list)
 
 
 class Conflict(BaseModel):
@@ -68,7 +81,7 @@ class ConflictReport(BaseModel):
     p3_count: int = 0
 
     @classmethod
-    def from_conflicts(cls, conflicts: List[Conflict]) -> "ConflictReport":
+    def from_conflicts(cls, conflicts):
         p0 = sum(1 for c in conflicts if c.severity == "P0")
         p1 = sum(1 for c in conflicts if c.severity == "P1")
         p2 = sum(1 for c in conflicts if c.severity == "P2")
@@ -101,30 +114,31 @@ class ContinuityReport(BaseModel):
     fix_suggestions: FixSuggestions
     summary: str
 
-    def to_json(self) -> str:
-        return self.model_dump_json(indent=2)
+    def to_json(self):
+        return self.model_dump_json(indent=2, ensure_ascii=False)
 
-    def to_markdown(self) -> str:
+    def to_markdown(self):
         lines = ["# 剧本连贯性审查报告\n"]
         lines.append(f"**语言**: {self.script_language}\n")
         lines.append(f"**摘要**: {self.summary}\n")
-
         lines.append("## 冲突列表\n")
         lines.append("| Rule ID | Severity | Character | Description | Location A | Location B |")
         lines.append("|---|---|---|---|---|---|")
         for c in self.conflicts.conflicts:
             loc_a = f"E{c.episode_a}S{c.scene_a}" if c.episode_a is not None and c.scene_a is not None else "-"
             loc_b = f"E{c.episode_b}S{c.scene_b}" if c.episode_b is not None and c.scene_b is not None else "-"
-            desc = c.description.replace("|", "\\|")
-            char = c.character.replace("|", "\\|") if c.character else "-"
-            lines.append(f"| {c.rule_id} | {c.severity} | {char} | {desc} | {loc_a} | {loc_b} |")
-
+            safe_description = c.description.replace("|", "\\|")
+            lines.append(
+                f"| {c.rule_id} | {c.severity} | {c.character or '-'} | "
+                f"{safe_description} | {loc_a} | {loc_b} |"
+            )
         lines.append("\n## 修复建议\n")
         lines.append("| Rule ID | Conflict Description | Suggestion | Priority |")
         lines.append("|---|---|---|---|")
         for s in self.fix_suggestions.suggestions:
-            c_desc = s.conflict_description.replace("|", "\\|")
-            sugg = s.suggestion.replace("|", "\\|")
-            lines.append(f"| {s.conflict_rule_id} | {c_desc} | {sugg} | {s.priority} |")
-
+            safe_conflict = s.conflict_description.replace("|", "\\|")
+            safe_suggestion = s.suggestion.replace("|", "\\|")
+            lines.append(
+                f"| {s.conflict_rule_id} | {safe_conflict} | {safe_suggestion} | {s.priority} |"
+            )
         return "\n".join(lines)

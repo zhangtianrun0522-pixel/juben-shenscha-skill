@@ -1,15 +1,55 @@
-from .checker import full_check, extract_assets, check_continuity, suggest_fixes
+from .models import (
+    AssetEntry,
+    AssetIdentity,
+    AssetRegistry,
+    CharacterSetting,
+    Conflict,
+    ConflictReport,
+    ContinuityReport,
+    FixSuggestion,
+    FixSuggestions,
+    StateChange,
+    TimelineAnchor,
+)
+from .checker import (
+    check_continuity,
+    extract_assets,
+    full_check,
+    generate_fix_suggestions,
+    merge_conflict_reports,
+    normalize_assets,
+    semantic_review,
+)
 from .parsers import parse_file
-from .models import ContinuityReport, AssetRegistry, ConflictReport, FixSuggestions
+from .prompts import (
+    get_extraction_prompt,
+    get_fix_suggestion_prompt,
+    get_normalization_prompt,
+    get_semantic_review_prompt,
+)
 
 __all__ = [
-    "full_check",
-    "extract_assets",
-    "check_continuity",
-    "suggest_fixes",
-    "parse_file",
-    "ContinuityReport",
+    "AssetEntry",
+    "AssetIdentity",
     "AssetRegistry",
+    "CharacterSetting",
+    "Conflict",
     "ConflictReport",
+    "ContinuityReport",
+    "FixSuggestion",
     "FixSuggestions",
+    "StateChange",
+    "TimelineAnchor",
+    "check_continuity",
+    "extract_assets",
+    "full_check",
+    "generate_fix_suggestions",
+    "merge_conflict_reports",
+    "normalize_assets",
+    "semantic_review",
+    "get_extraction_prompt",
+    "get_fix_suggestion_prompt",
+    "get_normalization_prompt",
+    "get_semantic_review_prompt",
+    "parse_file",
 ]

@@ -168,3 +168,97 @@ priority 可使用 high / medium / low。
 
 def dumps_json_for_prompt(data) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def get_timeline_extraction_prompt(script_text: str) -> str:
+    return f"""
+你是一个专业剧本时间轴分析助手。请根据下面给出的剧本时间线线索，提取"故事内时间轴"信息。
+
+请严格只输出 JSON，不要输出 Markdown，不要输出解释文字。
+
+JSON 顶层结构必须为：
+{{
+  "story_anchors": [
+    {{
+      "episode": 1,
+      "scene": 1,
+      "layer_id": "main",
+      "temporal_mode": "present",
+      "relative_time_label": null,
+      "story_offset_days": 0,
+      "story_offset_min": null,
+      "story_offset_max": null,
+      "is_time_jump": false,
+      "confidence": 1.0,
+      "evidence": "原文证据"
+    }}
+  ],
+  "time_layers": [
+    {{
+      "layer_id": "main",
+      "name": "主线现实",
+      "layer_type": "main",
+      "parent_layer_id": null,
+      "is_canonical": true,
+      "affects_canonical_state": true,
+      "confidence": 1.0
+    }}
+  ],
+  "time_relations": [
+    {{
+      "from_episode": 1,
+      "from_scene": 1,
+      "to_episode": 1,
+      "to_scene": 2,
+      "relation_type": "after",
+      "duration_days_min": null,
+      "duration_days_max": null,
+      "evidence": "原文证据",
+      "confidence": 1.0
+    }}
+  ]
+}}
+
+提取字段说明：
+
+1. story_anchors 列表：
+- episode: 集数
+- scene: 场次
+- layer_id: 对应 time_layers 中的 layer_id
+- temporal_mode: 只能使用 'present'/'flashback'/'dream'/'hallucination'/'parallel'/'flashforward'
+- relative_time_label: 原文时间表达，例如"三个月后""十年前""当天夜里"；不确定则 null
+- story_offset_days: 相对主线第一场的天数偏移，正数=故事时间之后，负数=之前；不确定则 null
+- story_offset_min/story_offset_max: 模糊时间范围；不确定则 null
+- is_time_jump: 是否为明确时间跳跃
+- confidence: 0 到 1
+- evidence: 原文证据
+
+2. time_layers 列表：
+- layer_id: 图层 ID
+- name: 图层名称
+- layer_type: 只能使用 'main'/'flashback'/'dream'/'hallucination'/'parallel'/'flashforward'
+- parent_layer_id: 父图层 ID；没有则 null
+- is_canonical: 是否属于真实故事事实
+- affects_canonical_state: 是否影响真实连续性状态
+- confidence: 0 到 1
+
+3. time_relations 列表：
+- from_episode/from_scene/to_episode/to_scene: 场景关系
+- relation_type: 只能使用 'before'/'after'/'same_time'/'immediately_after'
+- duration_days_min/duration_days_max: 两场之间的时间间隔范围；不确定则 null
+- evidence: 原文证据
+- confidence: 0 到 1
+
+归组原则：
+- 主线现实 layer_id='main'，is_canonical=true，affects_canonical_state=true。
+- 闪回 layer_type='flashback'，is_canonical=true，affects_canonical_state=true。
+- 梦境/幻觉 layer_type='dream'/'hallucination'，is_canonical=false，affects_canonical_state=false。
+- story_offset_days 相对主线第一场，正数=之后，负数=之前；闪回通常为负。
+- 如时间模糊，可用 story_offset_min/story_offset_max，不要强行编造确切值。
+- 只输出能从文本确定或高度推断的场景，不要编造不存在的场景。
+- 如果没有足够信息，返回空列表，但 time_layers 至少应包含 main 图层。
+
+待分析内容如下：
+
+{script_text}
+""".strip()

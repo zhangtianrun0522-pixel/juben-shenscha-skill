@@ -1,7 +1,10 @@
 from .models import (
     AssetEntry,
     AssetIdentity,
+    AssetLifecycle,
     AssetRegistry,
+    AssetStateEvent,
+    AssetStateInterval,
     CharacterSetting,
     Conflict,
     ConflictReport,
@@ -9,9 +12,14 @@ from .models import (
     FixSuggestion,
     FixSuggestions,
     StateChange,
+    StoryTimeAnchor,
+    TimeLayer,
+    TimeRelation,
     TimelineAnchor,
 )
 from .checker import (
+    build_asset_lifecycles,
+    build_story_timeline,
     check_continuity,
     extract_assets,
     full_check,
@@ -20,18 +28,20 @@ from .checker import (
     normalize_assets,
     semantic_review,
 )
-from .parsers import parse_file
-from .prompts import (
-    get_extraction_prompt,
-    get_fix_suggestion_prompt,
-    get_normalization_prompt,
-    get_semantic_review_prompt,
-)
+
+try:
+    from .parsers import parse_file
+except Exception:
+    parse_file = None
+
 
 __all__ = [
     "AssetEntry",
     "AssetIdentity",
+    "AssetLifecycle",
     "AssetRegistry",
+    "AssetStateEvent",
+    "AssetStateInterval",
     "CharacterSetting",
     "Conflict",
     "ConflictReport",
@@ -39,17 +49,18 @@ __all__ = [
     "FixSuggestion",
     "FixSuggestions",
     "StateChange",
+    "StoryTimeAnchor",
+    "TimeLayer",
+    "TimeRelation",
     "TimelineAnchor",
+    "build_asset_lifecycles",
+    "build_story_timeline",
     "check_continuity",
     "extract_assets",
     "full_check",
     "generate_fix_suggestions",
     "merge_conflict_reports",
     "normalize_assets",
-    "semantic_review",
-    "get_extraction_prompt",
-    "get_fix_suggestion_prompt",
-    "get_normalization_prompt",
-    "get_semantic_review_prompt",
     "parse_file",
+    "semantic_review",
 ]

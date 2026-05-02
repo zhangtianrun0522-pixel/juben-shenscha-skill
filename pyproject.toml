@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "continuity-checker"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+pdf = ["pdfplumber>=0.10"]
+docx = ["python-docx>=1.1"]
+all = ["pdfplumber>=0.10", "python-docx>=1.1"]
+
+[project.scripts]
+juben-check = "continuity_checker.cli:main"

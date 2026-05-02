@@ -2103,27 +2103,48 @@ def merge_conflict_reports(*reports: ConflictReport) -> ConflictReport:
     return ConflictReport.from_conflicts(conflicts)
 
 
+def _apply_severity_filter(report: ConflictReport, severity_filter: str) -> ConflictReport:
+    if severity_filter == "all":
+        return report
+    allowed = {"P0"} if severity_filter == "high" else {"P0", "P1"}
+    filtered = [c for c in report.conflicts if c.severity in allowed]
+    return ConflictReport.from_conflicts(filtered)
+
+
 def full_check(
     script_text: str,
     script_language: str = "zh",
     llm_client: Any = None,
     enable_semantic_review: bool = False,
+    check_mode: str = "full",
+    severity_filter: str = "all",
 ) -> ContinuityReport:
     """
     Full continuity checking pipeline.
 
-    1. extract_assets
-    2. normalize_assets
-    3. build_story_timeline
-    4. build_asset_lifecycles
-    5. check_continuity
-    6. optional semantic_review
-    7. generate_fix_suggestions
+    check_mode:
+      full           — 完整流水线（提取→规则→语义→修复建议）
+      assets_only    — 只提取资产档案，不做冲突检测
+      conflicts_only — 提取+冲突检测，不生成修复建议
+
+    severity_filter:
+      all            — 返回全部级别冲突
+      high           — 只返回 P0
+      high_medium    — 返回 P0 + P1
     """
     registry = extract_assets(script_text, llm_client=llm_client)
     registry = normalize_assets(registry, llm_client=llm_client)
     registry = build_story_timeline(registry, llm_client=llm_client)
     registry = build_asset_lifecycles(registry)
+
+    if check_mode == "assets_only":
+        return ContinuityReport(
+            script_language=script_language,
+            asset_registry=registry,
+            conflicts=ConflictReport.from_conflicts([]),
+            fix_suggestions=FixSuggestions(suggestions=[]),
+            summary="assets_only 模式：已完成资产提取，未执行冲突检测。",
+        )
 
     rule_report = check_continuity(registry)
 
@@ -2135,6 +2156,22 @@ def full_check(
                 rule_report = ConflictReport.from_conflicts(all_conflicts)
         except Exception:
             pass
+
+    rule_report = _apply_severity_filter(rule_report, severity_filter)
+
+    if check_mode == "conflicts_only":
+        summary = (
+            f"共发现 {rule_report.total_count} 个连续性问题："
+            f"P0={rule_report.p0_count}, P1={rule_report.p1_count}, "
+            f"P2={rule_report.p2_count}, P3={rule_report.p3_count}。"
+        )
+        return ContinuityReport(
+            script_language=script_language,
+            asset_registry=registry,
+            conflicts=rule_report,
+            fix_suggestions=FixSuggestions(suggestions=[]),
+            summary=summary,
+        )
 
     fix_suggestions = generate_fix_suggestions(
         conflicts=rule_report,

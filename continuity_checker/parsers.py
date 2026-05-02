@@ -1,10 +1,23 @@
 from pathlib import Path
 
-import pdfplumber
-from docx import Document
+try:
+    import pdfplumber
+    _PDFPLUMBER_AVAILABLE = True
+except ImportError:
+    _PDFPLUMBER_AVAILABLE = False
+
+try:
+    from docx import Document
+    _DOCX_AVAILABLE = True
+except ImportError:
+    _DOCX_AVAILABLE = False
 
 
 def _parse_pdf(file_path: str) -> str:
+    if not _PDFPLUMBER_AVAILABLE:
+        raise ImportError(
+            "解析 PDF 需要安装 pdfplumber：pip install pdfplumber"
+        )
     pages_text = []
     with pdfplumber.open(file_path) as pdf:
         for page in pdf.pages:
@@ -15,6 +28,10 @@ def _parse_pdf(file_path: str) -> str:
 
 
 def _parse_docx(file_path: str) -> str:
+    if not _DOCX_AVAILABLE:
+        raise ImportError(
+            "解析 DOCX 需要安装 python-docx：pip install python-docx"
+        )
     doc = Document(file_path)
     paragraphs = [para.text for para in doc.paragraphs]
     return "\n".join(paragraphs)

@@ -26,6 +26,7 @@ from .checker import (
     generate_fix_suggestions,
     merge_conflict_reports,
     normalize_assets,
+    normalize_characters,
     semantic_review,
 )
 
@@ -61,6 +62,7 @@ __all__ = [
     "generate_fix_suggestions",
     "merge_conflict_reports",
     "normalize_assets",
+    "normalize_characters",
     "parse_file",
     "semantic_review",
 ]

@@ -148,12 +148,18 @@ def _call_llm(prompt: str, llm_client: Any = None, model: Optional[str] = None) 
         return None
 
     if callable(llm_client):
-        result = llm_client(prompt)
-        return str(result) if result is not None else None
+        try:
+            result = llm_client(prompt)
+            return str(result) if result is not None else None
+        except Exception:
+            return None
 
     if hasattr(llm_client, "complete") and callable(llm_client.complete):
-        result = llm_client.complete(prompt)
-        return str(result) if result is not None else None
+        try:
+            result = llm_client.complete(prompt)
+            return str(result) if result is not None else None
+        except Exception:
+            return None
 
     if hasattr(llm_client, "chat") and hasattr(llm_client.chat, "completions"):
         chosen_model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -446,11 +452,14 @@ def extract_assets(script_text: str, llm_client: Any = None, chunk_size: int = 1
         chunks = _split_script_into_chunks(script_text, chunk_size)
         regs: List[AssetRegistry] = []
         for chunk in chunks:
-            prompt = get_extraction_prompt(chunk)
-            response = _call_llm(prompt, llm_client=llm_client)
-            data = _parse_json_from_text(response) if response else None
-            if isinstance(data, dict):
-                regs.append(_asset_registry_from_dict(data))
+            try:
+                prompt = get_extraction_prompt(chunk)
+                response = _call_llm(prompt, llm_client=llm_client)
+                data = _parse_json_from_text(response) if response else None
+                if isinstance(data, dict):
+                    regs.append(_asset_registry_from_dict(data))
+            except Exception:
+                continue
         return _merge_registries(*regs) if regs else AssetRegistry()
 
     prompt = get_extraction_prompt(script_text)
@@ -607,6 +616,77 @@ def _fallback_normalization_groups(assets: List[AssetEntry]) -> List[Dict[str, A
                 )
 
     return groups
+
+
+def get_character_normalization_prompt(character_names: List[str]) -> str:
+    names_str = ", ".join(repr(n) for n in character_names)
+    return (
+        "请将以下角色名列表中属于同一角色的名称变体归组，输出 JSON。\n"
+        f"\n角色名列表：[{names_str}]\n"
+        "\n输出格式：\n"
+        '{"groups": [{"canonical_name": "规范名", "variants": ["变体1", "变体2", "规范名"]}]}\n'
+        "\n规则：\n"
+        "1. canonical_name 选择优先级：中文名 > 英文全名 > 最长的名称\n"
+        "2. variants 必须包含 canonical_name 本身\n"
+        "3. 不同角色不要合并，只把明显是同一角色的变体合并（"
+        "同语言同名但大小写/简繁不同、中英文对应名、别称如「杀手」对应「杰克」等）\n"
+        "4. 只输出 JSON，不要解释"
+    )
+
+
+def normalize_characters(registry: AssetRegistry, llm_client: Any = None) -> AssetRegistry:
+    unique_chars: List[str] = list({entry.character for entry in registry.assets})
+
+    if len(unique_chars) <= 1:
+        return registry
+
+    prompt = get_character_normalization_prompt(unique_chars)
+    mapping: Dict[str, str] = {}
+    llm_success = False
+
+    try:
+        response = _call_llm(prompt, llm_client=llm_client)
+        parsed = _parse_json_from_text(response)
+        if parsed and isinstance(parsed, dict) and "groups" in parsed:
+            groups = parsed["groups"]
+            if groups and isinstance(groups, list):
+                for group in groups:
+                    if not isinstance(group, dict):
+                        continue
+                    canonical = group.get("canonical_name", "")
+                    variants = group.get("variants", [])
+                    if canonical and isinstance(variants, list):
+                        for variant in variants:
+                            if isinstance(variant, str):
+                                mapping[variant] = canonical
+                llm_success = bool(mapping)
+    except Exception:
+        pass
+
+    if not llm_success:
+        mapping = {}
+        for name in unique_chars:
+            best_target = name
+            for other in unique_chars:
+                if other == name:
+                    continue
+                if len(name) < len(other) and name.lower() in other.lower():
+                    if len(other) > len(best_target):
+                        best_target = other
+            mapping[name] = best_target
+
+    for name in unique_chars:
+        if name not in mapping:
+            mapping[name] = name
+
+    for entry in registry.assets:
+        entry.character = mapping.get(entry.character, entry.character)
+    for sc in registry.state_changes:
+        sc.character = mapping.get(sc.character, sc.character)
+    for cs in registry.character_settings:
+        cs.character = mapping.get(cs.character, cs.character)
+
+    return registry
 
 
 def normalize_assets(registry: AssetRegistry, llm_client: Any = None) -> AssetRegistry:
@@ -2237,6 +2317,7 @@ def full_check(
       high_medium    — 返回 P0 + P1
     """
     registry = extract_assets(script_text, llm_client=llm_client)
+    registry = normalize_characters(registry, llm_client=llm_client)
     registry = normalize_assets(registry, llm_client=llm_client)
     registry = build_story_timeline(registry, llm_client=llm_client)
     registry = build_asset_lifecycles(registry)

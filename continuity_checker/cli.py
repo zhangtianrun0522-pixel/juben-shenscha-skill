@@ -3,7 +3,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Optional
 
 import requests
 
@@ -17,7 +17,7 @@ class SimpleLLMClient:
         self.api_base = api_base.rstrip("/")
         self.model = model
 
-    def chat(self, prompt: str) -> str:
+    def __call__(self, prompt: str) -> str:
         url = f"{self.api_base}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -25,7 +25,14 @@ class SimpleLLMClient:
         }
         payload = {
             "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "你是严谨的剧本连续性审查助手。所有回答必须遵循用户要求的 JSON 格式。",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0,
         }
         resp = requests.post(url, headers=headers, json=payload, timeout=120)
         resp.raise_for_status()
@@ -105,7 +112,7 @@ def _build_llm_client() -> SimpleLLMClient:
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt"}
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: Optional[List[str]] = None) -> None:
     parser = argparse.ArgumentParser(
         prog="juben-check",
         description="剧本连续性检查工具 — 检测剧本中的设定冲突与资产不一致",

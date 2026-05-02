@@ -345,17 +345,121 @@ def _asset_registry_from_dict(data) -> AssetRegistry:
     )
 
 
-def extract_assets(script_text: str, llm_client: Any = None) -> AssetRegistry:
+def _split_script_into_chunks(script_text: str, max_chars: int = 15000) -> List[str]:
+    episode_splits = re.split(r'(第[零一二三四五六七八九十百千\d]+集)', script_text)
+    episodes: List[str] = []
+    temp = ""
+    for part in episode_splits:
+        if re.match(r'第[零一二三四五六七八九十百千\d]+集', part):
+            if temp:
+                episodes.append(temp)
+            temp = part
+        else:
+            temp += part
+    if temp:
+        episodes.append(temp)
+
+    scene_chunks: List[str] = []
+    for ep in episodes:
+        if len(ep) <= max_chars:
+            scene_chunks.append(ep)
+            continue
+        scene_splits = re.split(r'(内景|外景)', ep)
+        temp = ""
+        for part in scene_splits:
+            if part in ('内景', '外景'):
+                if temp:
+                    scene_chunks.append(temp)
+                temp = part
+            else:
+                temp += part
+        if temp:
+            scene_chunks.append(temp)
+
+    truncated: List[str] = []
+    for chunk in scene_chunks:
+        if len(chunk) <= max_chars:
+            truncated.append(chunk)
+        else:
+            for i in range(0, len(chunk), max_chars):
+                truncated.append(chunk[i:i + max_chars])
+
+    final: List[str] = []
+    for i, chunk in enumerate(truncated):
+        if i == 0:
+            final.append(chunk)
+        else:
+            prefix = final[-1][-500:]
+            final.append(prefix + chunk)
+    return final
+
+
+def _merge_registries(*registries: AssetRegistry) -> AssetRegistry:
+    def _g(obj: Any, key: str) -> Any:
+        return getattr(obj, key, None)
+
+    assets_map: dict = {}
+    for reg in registries:
+        for item in (_g(reg, 'assets') or []):
+            k = (_g(item, 'character'), _g(item, 'asset_type'), _g(item, 'asset_name'),
+                 _g(item, 'episode'), _g(item, 'scene'))
+            if k not in assets_map:
+                assets_map[k] = item
+
+    sc_map: dict = {}
+    for reg in registries:
+        for item in (_g(reg, 'state_changes') or []):
+            k = (_g(item, 'character'), _g(item, 'asset_name'), _g(item, 'episode'),
+                 _g(item, 'scene'), _g(item, 'new_status'))
+            if k not in sc_map:
+                sc_map[k] = item
+
+    tl_map: dict = {}
+    for reg in registries:
+        for item in (_g(reg, 'timeline') or []):
+            k = (_g(item, 'episode'), _g(item, 'scene'))
+            if k not in tl_map:
+                tl_map[k] = item
+
+    cs_map: dict = {}
+    for reg in registries:
+        for item in (_g(reg, 'character_settings') or []):
+            k = (_g(item, 'character'), _g(item, 'setting_type'), _g(item, 'content'))
+            if k not in cs_map:
+                cs_map[k] = item
+
+    merged = AssetRegistry()
+    merged.assets = list(assets_map.values())
+    merged.state_changes = list(sc_map.values())
+    merged.timeline = list(tl_map.values())
+    merged.character_settings = list(cs_map.values())
+    merged.identities = []
+    merged.story_anchors = []
+    merged.time_layers = []
+    merged.time_relations = []
+    merged.lifecycles = []
+    return merged
+
+
+def extract_assets(script_text: str, llm_client: Any = None, chunk_size: int = 15000) -> AssetRegistry:
+    if chunk_size > 0 and len(script_text) > chunk_size:
+        chunks = _split_script_into_chunks(script_text, chunk_size)
+        regs: List[AssetRegistry] = []
+        for chunk in chunks:
+            prompt = get_extraction_prompt(chunk)
+            response = _call_llm(prompt, llm_client=llm_client)
+            data = _parse_json_from_text(response) if response else None
+            if isinstance(data, dict):
+                regs.append(_asset_registry_from_dict(data))
+        return _merge_registries(*regs) if regs else AssetRegistry()
+
     prompt = get_extraction_prompt(script_text)
     response = _call_llm(prompt, llm_client=llm_client)
-
     if not response:
         return AssetRegistry()
-
     data = _parse_json_from_text(response)
     if not isinstance(data, dict):
         raise ValueError("Extraction response must be a JSON object")
-
     return _asset_registry_from_dict(data)
 
 

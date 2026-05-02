@@ -1315,6 +1315,566 @@ def _check_r04_asset_presence(registry: AssetRegistry) -> List[Conflict]:
     return conflicts
 
 
+def _r_scene_key(episode, scene):
+    return (episode if episode is not None else -1, scene if scene is not None else -1)
+
+
+def _r_interval_end_key(interval):
+    if interval.end_episode is None or interval.end_scene is None or interval.is_open_ended:
+        return (10**9, 10**9)
+    return (interval.end_episode, interval.end_scene)
+
+
+def _r_intervals_overlap(a, b):
+    a_start = (a.start_episode, a.start_scene)
+    a_end = _r_interval_end_key(a)
+    b_start = (b.start_episode, b.start_scene)
+    b_end = _r_interval_end_key(b)
+    return a_start < b_end and b_start < a_end
+
+
+def _r_later(ep_a, sc_a, ep_b, sc_b):
+    return (ep_a, sc_a) > (ep_b, sc_b)
+
+
+def _r_asset_display_name(lifecycle) -> str:
+    return lifecycle.canonical_name or lifecycle.asset_id
+
+
+def _r_asset_owner(lifecycle) -> str:
+    return lifecycle.owner_character or "未知"
+
+
+def _r_asset_type(lifecycle) -> str:
+    return lifecycle.asset_type or "未知"
+
+
+def _r_has_event_between(lifecycle, ep_start, sc_start, ep_end, sc_end, event_types) -> bool:
+    for event in lifecycle.events:
+        if event.event_type in event_types:
+            key = (event.episode, event.scene)
+            if (ep_start, sc_start) < key <= (ep_end, sc_end):
+                return True
+    return False
+
+
+def _check_r05_destroyed_reappear(registry: AssetRegistry) -> List[Conflict]:
+    conflicts = []
+    emitted = set()
+
+    entries_by_asset_id = {}
+    for asset in registry.assets:
+        if not asset.asset_id or not _is_positive_status(asset.status):
+            continue
+        if not _scene_affects_canonical_state(registry, asset.episode, asset.scene):
+            continue
+        entries_by_asset_id.setdefault(asset.asset_id, []).append(asset)
+
+    for lifecycle in registry.lifecycles:
+        if lifecycle.lifecycle_status != 'destroyed':
+            continue
+
+        destroyed_events = [
+            event for event in lifecycle.events
+            if event.event_type == 'destroyed' and event.affects_canonical_state
+        ]
+
+        if not destroyed_events and lifecycle.last_episode is not None and lifecycle.last_scene is not None:
+            destroy_points = [(lifecycle.last_episode, lifecycle.last_scene, None)]
+        else:
+            destroy_points = [
+                (event.episode, event.scene, event)
+                for event in destroyed_events
+            ]
+
+        repaired_events = [
+            event for event in lifecycle.events
+            if event.event_type == 'repaired' and event.affects_canonical_state
+        ]
+
+        for destroy_episode, destroy_scene, destroy_event in destroy_points:
+            destroy_key = (destroy_episode, destroy_scene)
+            for asset in entries_by_asset_id.get(lifecycle.asset_id, []):
+                appear_key = (asset.episode, asset.scene)
+                if appear_key <= destroy_key:
+                    continue
+                has_repaired = any(destroy_key < (event.episode, event.scene) < appear_key for event in repaired_events)
+                if has_repaired:
+                    continue
+
+                dedupe_key = (lifecycle.asset_id, destroy_episode, destroy_scene, asset.episode, asset.scene)
+                if dedupe_key in emitted:
+                    continue
+                emitted.add(dedupe_key)
+
+                conflicts.append(Conflict(
+                    rule_id='R05',
+                    severity='P0',
+                    description=f"资产“{lifecycle.canonical_name}”已标记为 destroyed，但在后续场次以正面状态再次出现，且缺少 repaired 事件。",
+                    character=asset.character or lifecycle.owner_character,
+                    episode_a=destroy_episode,
+                    scene_a=destroy_scene,
+                    episode_b=asset.episode,
+                    scene_b=asset.scene,
+                    raw_evidence=asset.raw_text,
+                ))
+
+    return conflicts
+
+
+def _check_r06_overlapping_holder_intervals(registry: AssetRegistry) -> List[Conflict]:
+    conflicts = []
+    intervals_by_asset_id = {}
+
+    for lifecycle in registry.lifecycles:
+        for interval in lifecycle.intervals:
+            if interval.state_dimension != 'holder':
+                continue
+            if interval.asset_id:
+                intervals_by_asset_id.setdefault(interval.asset_id, []).append(interval)
+
+    for asset_id, intervals in intervals_by_asset_id.items():
+        sorted_intervals = sorted(intervals, key=lambda x: (x.start_episode, x.start_scene, _r_interval_end_key(x)))
+        for i in range(len(sorted_intervals)):
+            for j in range(i + 1, len(sorted_intervals)):
+                a = sorted_intervals[i]
+                b = sorted_intervals[j]
+                if (b.start_episode, b.start_scene) > _r_interval_end_key(a):
+                    break
+                if a.value == b.value:
+                    continue
+                if a.layer_id != b.layer_id:
+                    continue
+                if not _r_intervals_overlap(a, b):
+                    continue
+
+                conflicts.append(Conflict(
+                    rule_id='R06',
+                    severity='P1',
+                    description=f"同一资产“{_r_asset_display_name(registry, asset_id)}”的 holder 区间重叠：同时由“{a.value}”与“{b.value}”持有。",
+                    character=_r_asset_owner(registry, asset_id),
+                    episode_a=a.start_episode,
+                    scene_a=a.start_scene,
+                    episode_b=b.start_episode,
+                    scene_b=b.start_scene,
+                    raw_evidence=f"{asset_id}: holder={a.value} overlaps holder={b.value}",
+                ))
+
+    return conflicts
+
+
+def _check_r07_setting_violated_by_asset_description(registry: AssetRegistry) -> List[Conflict]:
+    conflicts = []
+
+    contradiction_patterns = [
+        (
+            ('不会开车', '不能开车', '不会驾驶', '不能驾驶', '不会驾车', '不能驾车', '不懂开车', '不懂驾驶'),
+            ('驾车', '开车', '驾驶汽车', '驾驶轿车', '开着车', '开汽车', '开轿车'),
+            '不会开车/驾驶'
+        ),
+        (
+            ('不会游泳', '不能游泳', '不懂游泳'),
+            ('游泳', '潜水', '下水游'),
+            '不会游泳'
+        ),
+        (
+            ('失明', '盲人', '看不见'),
+            ('看见', '看到', '目睹', '凝视', '盯着看'),
+            '失明/看不见'
+        ),
+        (
+            ('失聪', '聋', '听不见'),
+            ('听见', '听到', '倾听', '听出'),
+            '失聪/听不见'
+        ),
+        (
+            ('不会说话', '哑巴', '失语'),
+            ('说道', '说话', '喊道', '大喊', '低语', '耳语'),
+            '不会说话/失语'
+        ),
+    ]
+
+    for setting in registry.character_settings:
+        setting_text = f"{setting.setting_type} {setting.content} {setting.raw_text}"
+        matched_rules = []
+        for negative_keywords, positive_keywords, label in contradiction_patterns:
+            if any(keyword in setting_text for keyword in negative_keywords):
+                matched_rules.append((positive_keywords, label))
+
+        if not matched_rules:
+            continue
+
+        for asset in registry.assets:
+            if asset.character != setting.character:
+                continue
+            if (asset.episode, asset.scene) <= (setting.episode, setting.scene):
+                continue
+
+            asset_text = f"{asset.asset_type} {asset.asset_name} {asset.raw_text}"
+            for positive_keywords, label in matched_rules:
+                if not any(keyword in asset_text for keyword in positive_keywords):
+                    continue
+
+                conflicts.append(Conflict(
+                    rule_id='R07',
+                    severity='P1',
+                    description=f"角色“{setting.character}”的硬性设定“{label}”被后续资产/动作描述违反。",
+                    character=setting.character,
+                    episode_a=setting.episode,
+                    scene_a=setting.scene,
+                    episode_b=asset.episode,
+                    scene_b=asset.scene,
+                    raw_evidence=f"设定：{setting.raw_text}；后续描述：{asset.raw_text}",
+                ))
+
+    return conflicts
+
+
+def _check_r08_asset_before_first_story_time(registry: AssetRegistry) -> List[Conflict]:
+    conflicts = []
+    first_scene_by_asset_id = {}
+
+    for identity in registry.identities:
+        first_scene_by_asset_id[identity.asset_id] = (identity.first_episode, identity.first_scene, identity.canonical_name)
+
+    for lifecycle in registry.lifecycles:
+        first_scene_by_asset_id.setdefault(
+            lifecycle.asset_id,
+            (lifecycle.first_episode, lifecycle.first_scene, lifecycle.canonical_name)
+        )
+
+    emitted = set()
+
+    for asset in registry.assets:
+        if not asset.asset_id:
+            continue
+        if asset.asset_id not in first_scene_by_asset_id:
+            continue
+        if not _is_positive_status(asset.status):
+            continue
+        if _timeline_is_flashback(registry, asset.episode, asset.scene):
+            continue
+
+        anchor = _get_story_anchor(registry, asset.episode, asset.scene)
+        if anchor and anchor.temporal_mode in ('flashback', 'dream', 'hallucination', 'parallel', 'flashforward'):
+            if anchor.temporal_mode == 'flashback':
+                continue
+
+        current_day = _story_day_for_scene(registry, asset.episode, asset.scene)
+        first_episode, first_scene, canonical_name = first_scene_by_asset_id[asset.asset_id]
+        first_day = _story_day_for_scene(registry, first_episode, first_scene)
+
+        if current_day is None or first_day is None:
+            continue
+        if current_day >= first_day:
+            continue
+
+        dedupe_key = (asset.asset_id, asset.episode, asset.scene)
+        if dedupe_key in emitted:
+            continue
+        emitted.add(dedupe_key)
+
+        conflicts.append(Conflict(
+            rule_id='R08',
+            severity='P1',
+            description=f"资产“{canonical_name}”出现在早于其首次登记场次故事时间的非闪回场景中。",
+            character=asset.character,
+            episode_a=first_episode,
+            scene_a=first_scene,
+            episode_b=asset.episode,
+            scene_b=asset.scene,
+            raw_evidence=asset.raw_text,
+        ))
+
+    return conflicts
+
+
+def _check_r09_mutually_exclusive_color_assets(registry: AssetRegistry) -> List[Conflict]:
+    conflicts = []
+
+    color_pairs = [
+        (('黑', 'black'), ('白', 'white')),
+        (('红', 'red'), ('绿', 'green')),
+        (('蓝', 'blue'), ('黄', 'yellow')),
+        (('金', 'gold', 'golden'), ('银', 'silver')),
+        (('紫', 'purple'), ('橙', 'orange')),
+    ]
+
+    identity_by_asset_id = {identity.asset_id: identity for identity in registry.identities}
+    groups = {}
+
+    for asset in registry.assets:
+        if not asset.asset_id:
+            continue
+        if not _is_positive_status(asset.status):
+            continue
+        key = (asset.episode, asset.character, asset.asset_type)
+        groups.setdefault(key, []).append(asset)
+
+    emitted = set()
+
+    for (episode, character, asset_type), assets in groups.items():
+        for i in range(len(assets)):
+            for j in range(i + 1, len(assets)):
+                a = assets[i]
+                b = assets[j]
+                if not a.asset_id or not b.asset_id or a.asset_id == b.asset_id:
+                    continue
+
+                a_name = identity_by_asset_id.get(a.asset_id).canonical_name if a.asset_id in identity_by_asset_id else a.asset_name
+                b_name = identity_by_asset_id.get(b.asset_id).canonical_name if b.asset_id in identity_by_asset_id else b.asset_name
+                a_text = f"{a_name} {a.asset_name} {a.raw_text}".lower()
+                b_text = f"{b_name} {b.asset_name} {b.raw_text}".lower()
+
+                for left_colors, right_colors in color_pairs:
+                    a_left = any(color in a_text for color in left_colors)
+                    a_right = any(color in a_text for color in right_colors)
+                    b_left = any(color in b_text for color in left_colors)
+                    b_right = any(color in b_text for color in right_colors)
+
+                    if not ((a_left and b_right) or (a_right and b_left)):
+                        continue
+
+                    dedupe_key = tuple(sorted([a.asset_id, b.asset_id])) + (episode, character, asset_type)
+                    if dedupe_key in emitted:
+                        continue
+                    emitted.add(dedupe_key)
+
+                    conflicts.append(Conflict(
+                        rule_id='R09',
+                        severity='P2',
+                        description=f"同一集同角色同类资产存在互斥颜色： “{a_name}” 与 “{b_name}”。",
+                        character=character,
+                        episode_a=a.episode,
+                        scene_a=a.scene,
+                        episode_b=b.episode,
+                        scene_b=b.scene,
+                        raw_evidence=f"{a.raw_text}；{b.raw_text}",
+                    ))
+
+    return conflicts
+
+
+def _check_r10_overlapping_character_locations(registry: AssetRegistry) -> List[Conflict]:
+    conflicts = []
+    location_intervals_by_character = {}
+
+    for lifecycle in registry.lifecycles:
+        character = lifecycle.owner_character or _r_asset_owner(registry, lifecycle.asset_id)
+        if not character:
+            continue
+
+        for interval in lifecycle.intervals:
+            if interval.state_dimension != 'location':
+                continue
+            location_intervals_by_character.setdefault(character, []).append(interval)
+
+    for character, intervals in location_intervals_by_character.items():
+        intervals = sorted(intervals, key=lambda x: (x.start_episode, x.start_scene, _r_interval_end_key(x), x.value))
+        for i in range(len(intervals)):
+            for j in range(i + 1, len(intervals)):
+                a = intervals[i]
+                b = intervals[j]
+                if (b.start_episode, b.start_scene) > _r_interval_end_key(a):
+                    break
+                if a.value == b.value:
+                    continue
+                if a.layer_id != b.layer_id:
+                    continue
+                if not _r_intervals_overlap(a, b):
+                    continue
+
+                overlap_start_episode = max(a.start_episode, b.start_episode)
+                overlap_end_episode = min(_r_interval_end_key(a)[0], _r_interval_end_key(b)[0])
+                if overlap_start_episode != overlap_end_episode:
+                    continue
+
+                conflicts.append(Conflict(
+                    rule_id='R10',
+                    severity='P1',
+                    description=f"角色“{character}”在同一集内存在重叠的不同 location 区间：“{a.value}”与“{b.value}”。",
+                    character=character,
+                    episode_a=a.start_episode,
+                    scene_a=a.start_scene,
+                    episode_b=b.start_episode,
+                    scene_b=b.start_scene,
+                    raw_evidence=f"location={a.value} overlaps location={b.value}",
+                ))
+
+    return conflicts
+
+
+def _check_r11_condition_jump_without_repair(registry: AssetRegistry) -> List[Conflict]:
+    conflicts = []
+    bad_values = ('destroyed', 'damaged', '破损', '损坏', '毁坏', '摧毁', '报废', '坏了')
+    good_values = ('normal', 'perfect', 'intact', '完好', '正常', '崭新', '无损', '完美')
+
+    for lifecycle in registry.lifecycles:
+        condition_events = [
+            event for event in lifecycle.events
+            if event.state_dimension == 'physical_condition'
+            and event.affects_canonical_state
+            and (event.to_value is not None or event.from_value is not None)
+        ]
+        condition_events.sort(key=lambda event: (event.episode, event.scene))
+
+        for i in range(len(condition_events) - 1):
+            a = condition_events[i]
+            b = condition_events[i + 1]
+
+            if b.episode - a.episode != 1:
+                continue
+
+            a_value = (a.to_value or a.from_value or '').lower()
+            b_value = (b.to_value or b.from_value or '').lower()
+
+            if not any(value in a_value for value in bad_values):
+                continue
+            if not any(value in b_value for value in good_values):
+                continue
+
+            has_repaired = any(
+                event.event_type == 'repaired'
+                and event.affects_canonical_state
+                and (a.episode, a.scene) < (event.episode, event.scene) < (b.episode, b.scene)
+                for event in lifecycle.events
+            )
+            if has_repaired:
+                continue
+
+            conflicts.append(Conflict(
+                rule_id='R11',
+                severity='P0',
+                description=f"资产“{lifecycle.canonical_name}”的 physical_condition 在相邻集之间从“{a_value}”直接跳回“{b_value}”，缺少 repaired 事件。",
+                character=lifecycle.owner_character or _r_asset_owner(registry, lifecycle.asset_id),
+                episode_a=a.episode,
+                scene_a=a.scene,
+                episode_b=b.episode,
+                scene_b=b.scene,
+                raw_evidence=f"{a.evidence}；{b.evidence}",
+            ))
+
+    return conflicts
+
+
+def _check_r12_body_feature_location_conflict(registry: AssetRegistry) -> List[Conflict]:
+    conflicts = []
+
+    body_type_keywords = ('疤', 'scar', 'birthmark', '身体特征')
+    conflict_pairs = [
+        (('左', 'left'), ('右', 'right'), '左右'),
+        (('手臂', '胳膊', '臂', 'arm'), ('腿', 'leg'), '手臂/腿'),
+        (('手', 'hand'), ('脚', 'foot'), '手/脚'),
+        (('脸', '面部', 'face'), ('背', '后背', 'back'), '脸/背'),
+        (('额头', 'forehead'), ('下巴', 'chin'), '额头/下巴'),
+    ]
+
+    entries_by_asset_id = {}
+    for asset in registry.assets:
+        if not asset.asset_id:
+            continue
+        asset_type = (asset.asset_type or '').lower()
+        if not any(keyword in asset_type for keyword in body_type_keywords):
+            continue
+        entries_by_asset_id.setdefault(asset.asset_id, []).append(asset)
+
+    emitted = set()
+
+    for asset_id, entries in entries_by_asset_id.items():
+        entries = sorted(entries, key=lambda asset: (asset.episode, asset.scene))
+        for i in range(len(entries)):
+            for j in range(i + 1, len(entries)):
+                a = entries[i]
+                b = entries[j]
+                if (a.episode, a.scene) == (b.episode, b.scene):
+                    continue
+
+                a_text = f"{a.asset_name} {a.raw_text}".lower()
+                b_text = f"{b.asset_name} {b.raw_text}".lower()
+
+                for left_keywords, right_keywords, label in conflict_pairs:
+                    a_left = any(keyword in a_text for keyword in left_keywords)
+                    a_right = any(keyword in a_text for keyword in right_keywords)
+                    b_left = any(keyword in b_text for keyword in left_keywords)
+                    b_right = any(keyword in b_text for keyword in right_keywords)
+
+                    if not ((a_left and b_right) or (a_right and b_left)):
+                        continue
+
+                    dedupe_key = (asset_id, a.episode, a.scene, b.episode, b.scene, label)
+                    if dedupe_key in emitted:
+                        continue
+                    emitted.add(dedupe_key)
+
+                    conflicts.append(Conflict(
+                        rule_id='R12',
+                        severity='P1',
+                        description=f"身体特征类资产“{_r_asset_display_name(registry, asset_id)}”在不同场次出现互斥身体部位描述（{label}）。",
+                        character=a.character,
+                        episode_a=a.episode,
+                        scene_a=a.scene,
+                        episode_b=b.episode,
+                        scene_b=b.scene,
+                        raw_evidence=f"{a.raw_text}；{b.raw_text}",
+                    ))
+
+    return conflicts
+
+
+def _check_r13_vague_asset_not_normalized(registry: AssetRegistry) -> List[Conflict]:
+    conflicts = []
+    groups = {}
+
+    for asset in registry.assets:
+        if not _is_positive_status(asset.status):
+            continue
+        key = (asset.episode, asset.character, asset.asset_type)
+        groups.setdefault(key, []).append(asset)
+
+    emitted = set()
+
+    for (episode, character, asset_type), assets in groups.items():
+        vague_assets = [asset for asset in assets if asset.is_vague]
+        if not vague_assets:
+            continue
+
+        for vague_asset in vague_assets:
+            for other in assets:
+                if other is vague_asset:
+                    continue
+                if vague_asset.asset_id and other.asset_id and vague_asset.asset_id == other.asset_id:
+                    continue
+
+                asset_ids = [asset.asset_id for asset in assets if asset.asset_id]
+                if len(asset_ids) != len(set(asset_ids)):
+                    continue
+
+                dedupe_key = (
+                    episode,
+                    character,
+                    asset_type,
+                    vague_asset.asset_id or vague_asset.asset_name,
+                    other.asset_id or other.asset_name,
+                )
+                if dedupe_key in emitted:
+                    continue
+                emitted.add(dedupe_key)
+
+                conflicts.append(Conflict(
+                    rule_id='R13',
+                    severity='P2',
+                    description=f"同集同角色同类资产中，模糊资产“{vague_asset.asset_name}”与其他资产“{other.asset_name}”共存且 asset_id 未归一，存在潜在未归一化风险。",
+                    character=character,
+                    episode_a=vague_asset.episode,
+                    scene_a=vague_asset.scene,
+                    episode_b=other.episode,
+                    scene_b=other.scene,
+                    raw_evidence=f"{vague_asset.raw_text}；{other.raw_text}",
+                ))
+
+    return conflicts
+
+
 def check_continuity(assets: AssetRegistry) -> ConflictReport:
     """
     Core rule-based continuity checker.
@@ -1324,6 +1884,7 @@ def check_continuity(assets: AssetRegistry) -> ConflictReport:
     - R02: 伤情恢复速度异常（使用故事天数，fallback 到集数差）
     - R03: 同集同角色同asset_type存在多个不同真实资产 → P1
     - R04: 资产消失后无过渡再次出现（跳过梦境/幻觉等非规范时间层）
+    - R05-R13: 见各 _check_rXX_xxx 函数
     """
     conflicts: List[Conflict] = []
     registry = assets
@@ -1419,6 +1980,17 @@ def check_continuity(assets: AssetRegistry) -> ConflictReport:
     # R04
     conflicts.extend(_check_r04_asset_presence(registry))
 
+    # R05-R13
+    conflicts.extend(_check_r05_destroyed_reappear(registry))
+    conflicts.extend(_check_r06_overlapping_holder_intervals(registry))
+    conflicts.extend(_check_r07_setting_violated_by_asset_description(registry))
+    conflicts.extend(_check_r08_asset_before_first_story_time(registry))
+    conflicts.extend(_check_r09_mutually_exclusive_color_assets(registry))
+    conflicts.extend(_check_r10_overlapping_character_locations(registry))
+    conflicts.extend(_check_r11_condition_jump_without_repair(registry))
+    conflicts.extend(_check_r12_body_feature_location_conflict(registry))
+    conflicts.extend(_check_r13_vague_asset_not_normalized(registry))
+
     return ConflictReport.from_conflicts(conflicts)
 
 
@@ -1480,6 +2052,33 @@ def generate_fix_suggestions(
         elif conflict.rule_id == "R04":
             suggestion = "在资产重新出现前补充找回、修复或重新获得的过渡场景或台词。"
             priority = "high"
+        elif conflict.rule_id == "R05":
+            suggestion = "补充该资产从 destroyed 到再次出现之间的 repaired/修复事件，或将后续出现改为回忆、误认、复制品/替代品，或修正 destroyed 状态。"
+            priority = "critical"
+        elif conflict.rule_id == "R06":
+            suggestion = "拆分或调整 holder 状态区间，明确资产在重叠时间内的唯一持有者；如为共同持有，请改用明确的共享持有描述。"
+            priority = "high"
+        elif conflict.rule_id == "R07":
+            suggestion = "核对角色硬性设定与后续行为/资产描述：修改违反设定的动作，或在此前增加合理解释、能力变化或设定更新。"
+            priority = "high"
+        elif conflict.rule_id == "R08":
+            suggestion = "确认该场景的时间层归属；若为闪回/平行时间线，请在数据中标注正确的 temporal_mode；若为主线错误，请调整资产首次出现位置。"
+            priority = "high"
+        elif conflict.rule_id == "R09":
+            suggestion = "确认同集同角色的两件同类资产是否为同一物；若是，请归一化为同一 asset_id；若确为不同资产，请补充换装或更换说明。"
+            priority = "medium"
+        elif conflict.rule_id == "R10":
+            suggestion = "检查角色在同集内跨地点出现是否有合理的移动交代；若无，请补充移动场景或修正地点信息。"
+            priority = "high"
+        elif conflict.rule_id == "R11":
+            suggestion = "在相邻集之间补充 repaired/修复事件或修复说明，或将 physical_condition 的跳变改为连续、合理的状态变化。"
+            priority = "critical"
+        elif conflict.rule_id == "R12":
+            suggestion = "统一身体特征资产的部位描述；若确有多个不同身体特征，请拆分为不同 asset_id 并分别登记。"
+            priority = "high"
+        elif conflict.rule_id == "R13":
+            suggestion = "对模糊资产进行归一化：确认其是否与同类资产为同一物，若是则合并 asset_id；若不是则补充更明确的名称和识别特征。"
+            priority = "medium"
         else:
             suggestion = "根据冲突描述核对原文证据，统一设定或补充过渡说明。"
             priority = "medium"

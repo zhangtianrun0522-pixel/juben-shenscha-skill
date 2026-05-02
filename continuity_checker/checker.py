@@ -2059,6 +2059,82 @@ def _check_r13_vague_asset_not_normalized(registry: AssetRegistry) -> List[Confl
     return conflicts
 
 
+# ── R01 噪音过滤 ─────────────────────────────────────────────────────────────
+# 不需要"铺垫"的资产类型 / 资产名称：身体部位、通用场景道具、服饰统称等。
+# 这些元素在任何集数首次出现都不算连续性问题。
+_R01_SKIP_TYPES: frozenset = frozenset({
+    "身体特征", "身体部位", "体型", "外貌", "肤色",
+    "表情", "神情", "动作",
+    "身份", "职业", "背景", "年龄",
+})
+
+_R01_SKIP_TYPE_KEYWORDS: tuple = (
+    "身体", "体征", "外貌", "肤色", "表情", "神情", "动作",
+    "伤口", "受伤", "疤", "伤疤", "伤痕", "创伤",  # 伤口类由 R02/R11 负责
+)
+
+# 高频通用词：身体部位
+_R01_SKIP_NAME_EXACT: frozenset = frozenset({
+    "手", "手指", "手掌", "手腕", "手臂", "胳膊", "拳头",
+    "脚", "脚趾", "脚踝", "腿", "大腿", "小腿", "膝盖",
+    "眼睛", "眼", "双眼", "目光", "眼神", "眼眶", "眼角",
+    "嘴", "嘴唇", "嘴角", "牙齿", "舌头",
+    "脸", "面部", "面孔", "脸颊", "额头", "下巴", "颧骨",
+    "头", "头发", "发丝", "发梢", "发根",
+    "脖子", "颈部", "咽喉", "喉咙",
+    "胸", "胸口", "胸膛", "乳房", "乳头",
+    "腹部", "肚子", "肚脐", "腰", "腰部", "胯部",
+    "臀", "臀部", "屁股",
+    "背", "后背", "脊背", "脊椎",
+    "肩", "肩膀", "肩部",
+    "皮肤", "血管", "肌肉",
+    # 常见场景家具 / 环境物件
+    "床", "床铺", "床头", "床尾", "被子", "枕头", "床单", "毯子",
+    "椅子", "凳子", "沙发", "桌子", "桌面", "茶几",
+    "地板", "地面", "墙壁", "天花板", "窗户", "窗帘", "窗台",
+    "门", "门口", "门框", "门把手",
+    "灯", "灯光", "灯泡",
+    "镜子",
+    # 极通用动作道具
+    "水", "水杯", "杯子", "茶杯", "碗", "筷子",
+    "手机", "电话",  # 现代剧中几乎人人随时有
+})
+
+_R01_SKIP_NAME_KEYWORDS: tuple = (
+    # 身体部位泛称
+    "大腿", "小腿", "手指", "脚趾", "眼角", "嘴角", "发丝",
+    "腹部", "胸口", "后背", "脊背", "肩膀",
+    # 伤口相关（R02/R11 负责）
+    "伤口", "伤疤", "疤痕", "血迹", "淤青", "淤血", "肿",
+    # 场景通用
+    "床头", "床尾", "床单", "被子", "枕头",
+)
+
+
+def _r01_is_noise(entry: "AssetEntry") -> bool:
+    """Return True if this asset should be silently skipped by R01."""
+    atype = (entry.asset_type or "").strip()
+    aname = (entry.asset_name or "").strip()
+
+    # Single-character names are nearly always body parts or pronouns
+    if len(aname) <= 1:
+        return True
+
+    if atype in _R01_SKIP_TYPES:
+        return True
+    for kw in _R01_SKIP_TYPE_KEYWORDS:
+        if kw in atype:
+            return True
+
+    if aname in _R01_SKIP_NAME_EXACT:
+        return True
+    for kw in _R01_SKIP_NAME_KEYWORDS:
+        if kw in aname:
+            return True
+
+    return False
+
+
 def check_continuity(assets: AssetRegistry) -> ConflictReport:
     """
     Core rule-based continuity checker.
@@ -2082,7 +2158,7 @@ def check_continuity(assets: AssetRegistry) -> ConflictReport:
             first_seen_by_asset[key] = entry
 
     for entry in first_seen_by_asset.values():
-        if entry.episode > 1 and _is_positive_status(entry.status):
+        if entry.episode > 1 and _is_positive_status(entry.status) and not _r01_is_noise(entry):
             conflicts.append(
                 Conflict(
                     rule_id="R01",

@@ -2125,6 +2125,12 @@ def check_continuity(assets: AssetRegistry) -> ConflictReport:
                 if a.scene == b.scene and a.asset_name == b.asset_name:
                     continue
 
+                # 两者均非模糊指代且已有不同 asset_id，说明是合理的不同道具，不报
+                if (not a.is_vague and not b.is_vague
+                        and a.asset_id is not None and b.asset_id is not None
+                        and a.asset_id != b.asset_id):
+                    continue
+
                 if a.asset_id is not None and b.asset_id is not None:
                     if a.asset_id == b.asset_id:
                         continue
